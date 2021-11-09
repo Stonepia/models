@@ -24,6 +24,16 @@ from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import imagenet_preprocessing
 from official.vision.image_classification.resnet import resnet_model
 
+import contextlib
+
+@contextlib.contextmanager
+def options(options):
+  old_opts = tf.config.optimizer.get_experimental_options()
+  tf.config.optimizer.set_experimental_options(options)
+  try:
+    yield
+  finally:
+    tf.config.optimizer.set_experimental_options(old_opts)
 
 class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
   """Implements the training and evaluation APIs for Resnet model."""
@@ -168,8 +178,16 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
           tape, self.optimizer, loss, self.model.trainable_variables)
       self.train_loss.update_state(loss)
       self.train_accuracy.update_state(labels, logits)
-
-    self.strategy.run(step_fn, args=(next(iterator),))
+      tf.print("Loss is : " , loss)
+    print("Here here, using tf.function")
+    
+    with options({'xpu_remapper': True,'disable_model_pruning': True, 
+    'constant_folding' : False,
+    'dependency_optimization':False,'remapping':False}):
+      step_fn = tf.function(step_fn)
+    # if self.flags_obj.enable_xla:
+      # step_fn = tf.function(step_fn, jit_compile=True)
+      self.strategy.run(step_fn, args=(next(iterator),))
 
   def train_loop_end(self):
     """See base class."""

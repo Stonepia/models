@@ -40,7 +40,7 @@ flags.DEFINE_boolean(name='single_l2_loss_op', default=False,
                      'instead of using Keras per-layer L2 loss.')
 
 
-def build_stats(runnable, time_callback):
+def build_stats(runnable, callbacks):
   """Normalizes and returns dictionary of stats.
 
   Args:
@@ -59,12 +59,15 @@ def build_stats(runnable, time_callback):
     stats['train_loss'] = runnable.train_loss.result().numpy()
     stats['train_acc'] = runnable.train_accuracy.result().numpy()
 
-  if time_callback:
-    timestamp_log = time_callback.timestamp_log
-    stats['step_timestamp_log'] = timestamp_log
-    stats['train_finish_time'] = time_callback.train_finish_time
-    if time_callback.epoch_runtime_log:
-      stats['avg_exp_per_second'] = time_callback.average_examples_per_second
+
+  for callback in callbacks:
+    if isinstance(callback, keras_utils.TimeHistory):
+      timestamp_log = callback.timestamp_log
+      stats['step_timestamp_log'] = timestamp_log
+      stats['train_finish_time'] = callback.train_finish_time
+      if callback.epoch_runtime_log:
+        stats['avg_exp_per_second'] = callback.average_examples_per_second
+    
 
   return stats
 
@@ -144,6 +147,7 @@ def run(flags_obj):
       flags_obj.batch_size,
       flags_obj.log_steps,
       logdir=flags_obj.model_dir if flags_obj.enable_tensorboard else None)
+  
   with distribute_utils.get_strategy_scope(strategy):
     runnable = resnet_runnable.ResnetRunnable(flags_obj, time_callback,
                                               per_epoch_steps)
@@ -172,6 +176,7 @@ def run(flags_obj):
       eval_summary_dir=os.path.join(flags_obj.model_dir, 'eval'))
 
   time_callback.on_train_begin()
+  tf.profiler.experimental.start('logdir')
   if not flags_obj.skip_eval:
     resnet_controller.train_and_evaluate(
         train_steps=per_epoch_steps * train_epochs,
@@ -179,9 +184,15 @@ def run(flags_obj):
         eval_interval=eval_interval)
   else:
     resnet_controller.train(steps=per_epoch_steps * train_epochs)
+  tf.profiler.experimental.stop()
   time_callback.on_train_end()
+  callbacks = [time_callback]
 
-  stats = build_stats(runnable, time_callback)
+  if flags_obj.enable_tensorboard:
+    tensorboard_callback = tf.keras.callbacks.TensorBoard(
+        log_dir=flags_obj.model_dir, profile_batch=flags_obj.profile_steps)
+    callbacks.append(tensorboard_callback)
+  stats = build_stats(runnable, callbacks)
   return stats
 
 
