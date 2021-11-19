@@ -119,7 +119,7 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
         loop_fn = tf.function(loop_fn)
     else:
       if self._train_options.use_tf_function:
-        train_step_fn = tf.function(train_step_fn)
+        train_step_fn = tf.function(train_step_fn,input_signature=None)
       loop_fn = loop_fns.create_loop_fn(train_step_fn)
     return loop_fn
 
