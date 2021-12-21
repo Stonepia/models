@@ -96,3 +96,8 @@ ENV/
 
 # For mac
 .DS_Store
+
+model_dir
+logdir/
+ResNetGraph
+logs

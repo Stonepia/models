@@ -23,6 +23,8 @@ from official.vision.image_classification.resnet import common
 from official.vision.image_classification.resnet import imagenet_preprocessing
 from official.vision.image_classification.resnet import resnet_model
 
+import pandas as pd
+
 
 class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
   """Implements the training and evaluation APIs for Resnet model."""
@@ -53,7 +55,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
           num_channels=imagenet_preprocessing.NUM_CHANNELS,
           num_classes=imagenet_preprocessing.NUM_CLASSES,
           dtype=self.dtype,
-          drop_remainder=True)
+          drop_remainder=False)
     else:
       self.input_fn = imagenet_preprocessing.input_fn
 
@@ -176,8 +178,19 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         'train_loss': self.train_loss.result(),
         'train_accuracy': self.train_accuracy.result(),
     }
+    # print("===========here here==================")
+
     self.time_callback.on_batch_end(self.epoch_helper.batch_index - 1)
     self._epoch_end()
+
+    num_gpus = self.flags_obj.num_gpus
+    batch_size = self.batch_size
+    gpus = tf.config.list_physical_devices('GPU')
+    # print("bs : " , batch_size, " # gpus : " , len(gpus))
+    # result_df = pd.DataFrame({'num_gpus' : [gpus], 'bs' : [batch_size]})
+    # for ind, eps in enumerate(self._ex_per_second):
+    #   result_df['{}'.format(ind*10)] = eps
+    # print(result_df)
     return metrics
 
   def eval_begin(self):

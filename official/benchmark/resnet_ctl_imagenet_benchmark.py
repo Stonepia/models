@@ -21,6 +21,7 @@ import time
 
 from absl import flags
 import tensorflow as tf
+import numpy as np
 
 from official.benchmark import owner_utils
 from official.vision.image_classification.resnet import common
@@ -28,6 +29,7 @@ from official.vision.image_classification.resnet import resnet_ctl_imagenet_main
 from official.benchmark.perfzero_benchmark import PerfZeroBenchmark
 from official.benchmark import benchmark_wrappers
 from official.utils.flags import core as flags_core
+
 
 MIN_TOP_1_ACCURACY = 0.76
 MAX_TOP_1_ACCURACY = 0.77
@@ -227,7 +229,14 @@ class Resnet50CtlBenchmarkBase(CtlBenchmark):
     FLAGS.num_gpus = 1
     FLAGS.distribution_strategy = 'off'
     FLAGS.model_dir = self._get_model_dir('benchmark_1_gpu_no_dist_strat')
-    FLAGS.batch_size = 128
+    FLAGS.enable_tensorboard = False
+    FLAGS.use_tf_while_loop=False
+    FLAGS.use_tf_function=True
+    FLAGS.enable_xla=False
+    FLAGS.single_l2_loss_op=True
+    FLAGS.data_format="channels_last"
+    FLAGS.batch_size = 64
+    print("Model dir : ", FLAGS.model_dir)
     self._run_and_report_benchmark()
 
   def benchmark_1_gpu(self):
@@ -237,7 +246,7 @@ class Resnet50CtlBenchmarkBase(CtlBenchmark):
     FLAGS.num_gpus = 1
     FLAGS.distribution_strategy = 'one_device'
     FLAGS.model_dir = self._get_model_dir('benchmark_1_gpu')
-    FLAGS.batch_size = 128
+    FLAGS.batch_size = 32
     self._run_and_report_benchmark()
 
   def benchmark_1_gpu_fp16(self):
@@ -503,7 +512,7 @@ class Resnet50CtlBenchmarkSynth(Resnet50CtlBenchmarkBase):
     def_flags = {}
     def_flags['skip_eval'] = True
     def_flags['use_synthetic_data'] = True
-    def_flags['train_steps'] = 110
+    def_flags['train_steps'] = 20
     def_flags['steps_per_loop'] = 10
     def_flags['log_steps'] = 10
 
@@ -527,5 +536,93 @@ class Resnet50CtlBenchmarkReal(Resnet50CtlBenchmarkBase):
         output_dir=output_dir, default_flags=def_flags, **kwargs)
 
 
+class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
+  """Resnet50 benchmarks."""
+
+  def __init__(self, output_dir=None, default_flags=None, **kwargs):
+    flag_methods = [common.define_keras_flags]
+
+    super(Resnet50BatchCtlBenchmarkBase, self).__init__(
+        output_dir=output_dir,
+        flag_methods=flag_methods,
+        default_flags=default_flags,
+        **kwargs)
+
+  @benchmark_wrappers.enable_runtime_flags
+  def _run_and_report_benchmark(self):
+    start_time_sec = time.time()
+    stats = resnet_ctl_imagenet_main.run(FLAGS)
+    wall_time_sec = time.time() - start_time_sec
+
+    # Warmup means the number of logged step time entries that are excluded in
+    # performance report. Default to exclude 1 FLAGS.log_steps time.
+    super(Resnet50BatchCtlBenchmarkBase, self)._report_benchmark(
+        stats,
+        wall_time_sec,
+        total_batch_size=FLAGS.batch_size,
+        log_steps=FLAGS.log_steps,
+        warmup=1,
+        start_time_sec=start_time_sec)
+
+  def benchmark_gpu_remapper_no_dist_strat(self, total_batch_size, single_bs):
+    """Test Keras model with 1 GPU, no distribution strategy."""
+    self._setup()
+
+    FLAGS.num_gpus = 1
+    FLAGS.distribution_strategy = 'off'
+    FLAGS.model_dir = self._get_model_dir('benchmark_gpu_remapper_no_dist_strat')
+    FLAGS.enable_tensorboard = False
+    FLAGS.use_tf_while_loop=False
+    FLAGS.use_tf_function=True
+    FLAGS.enable_xla=False
+    FLAGS.single_l2_loss_op=True
+    FLAGS.data_format="channels_last"
+
+    FLAGS.batch_size = total_batch_size
+
+    print("Model dir : ", FLAGS.model_dir)
+    os.environ["XPU_GPU_BS"] = "{}".format(single_bs)
+
+
+    self._run_and_report_benchmark()
+
+
+class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
+  """Resnet50 Batch run synthetic benchmark tests."""
+
+  def __init__(self, output_dir=None, root_data_dir=None, **kwargs):
+    def_flags = {}
+    def_flags['skip_eval'] = True
+    def_flags['use_synthetic_data'] = True
+    def_flags['train_steps'] = 110
+    def_flags['steps_per_loop'] = 10
+    def_flags['log_steps'] = 10
+
+
+    super(Resnet50BatchCtlBenchmarkSynth, self).__init__(
+        output_dir=output_dir, default_flags=def_flags, **kwargs)
+
+
 if __name__ == '__main__':
-  tf.test.main()
+  test = Resnet50BatchCtlBenchmarkSynth(output_dir='./logs')
+  print("start bench marking ")
+  ngpus = 4
+
+  single_bs = [8,16,32,48]
+  num_devices_range = np.arange(2,ngpus+1)
+
+  print(num_devices_range)
+
+
+  for num_devices in num_devices_range:
+    print(num_devices, ", ", type(num_devices))
+    for bs in single_bs:
+      total_bs = int(bs * num_devices)
+      os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
+      print("=====================")
+      print("num_devices :  {} , total_bs : {}".format(num_devices, total_bs))
+
+      test.benchmark_gpu_remapper_no_dist_strat(total_bs, bs)
+
+  # test.benchmark_gpu_remapper_no_dist_strat(96,32, "0,1,2")
+  # tf.test.main()

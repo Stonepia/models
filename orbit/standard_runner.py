@@ -44,6 +44,18 @@ from orbit.utils import loop_fns
 
 import tensorflow as tf
 
+from tensorflow.core.protobuf import rewriter_config_pb2
+import contextlib
+
+@contextlib.contextmanager
+def options(options):
+  old_opts = tf.config.optimizer.get_experimental_options()
+  tf.config.optimizer.set_experimental_options(options)
+  try:
+    yield
+  finally:
+    tf.config.optimizer.set_experimental_options(old_opts)
+
 
 @dataclasses.dataclass(frozen=True)
 class StandardTrainerOptions:
@@ -83,9 +95,7 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
   `tf.function`, as determined by the `options` passed to `__init__`.
   """
 
-  def __init__(self,
-               train_dataset,
-               options: Optional[StandardTrainerOptions] = None):
+  def __init__(self, train_dataset, ex_per_second=[], options: StandardTrainerOptions = None):
     """Initializes the `StandardTrainer` instance.
 
     Args:
@@ -103,6 +113,7 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
 
     self._train_options = options
     self._train_dataset = train_dataset
+    self._ex_per_second = ex_per_second
     self._train_iter = None
     self._train_loop_fn = None
 
@@ -143,7 +154,14 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
     if self._train_iter is None:
       self._train_iter = tf.nest.map_structure(iter, self.train_dataset)
 
-    self._train_loop_fn(self._train_iter, num_steps)
+    with options({
+        'disable_model_pruning': True,
+        'constant_folding': False,
+        'dependency_optimization': False,
+        'xpu_remapper': True,
+        'layout_optimizer': False
+    }):
+      self._train_loop_fn(self._train_iter, num_steps)
     return self.train_loop_end()
 
   def train_loop_begin(self):
@@ -217,10 +235,10 @@ class StandardEvaluatorOptions:
 
   Attributes:
     use_tf_function: A boolean indicating whether to apply `tf.function` to the
-      evaluation loop. This will only affect the body of the loop (involving
-      `eval_step`); `eval_loop_begin` and `eval_loop_end` will always be run
+      training loop. This will only affect the body of the loop (involving
+      `train_step`); `train_loop_begin` and `train_loop_end` will always be run
       in eager mode.
-    use_tf_while_loop: A boolean indicating whether to run the evaluation loop
+    use_tf_while_loop: A boolean indicating whether to run the training loop
       using a `tf.while_loop`. If `True`, `use_tf_function` must also be `True`.
     recreate_iterator_for_each_eval: A boolean indicating whether to recreate a
       new iterator for the evaluation dataset before each round of evaluation,
@@ -258,9 +276,7 @@ class StandardEvaluator(runner.AbstractEvaluator, metaclass=abc.ABCMeta):
   is recommended in this case.
   """
 
-  def __init__(self,
-               eval_dataset,
-               options: Optional[StandardEvaluatorOptions] = None):
+  def __init__(self, eval_dataset, options: StandardEvaluatorOptions = None):
     """Initializes the `StandardEvaluator` instance.
 
     Args:
@@ -407,7 +423,7 @@ class StandardEvaluator(runner.AbstractEvaluator, metaclass=abc.ABCMeta):
     pass
 
   def eval_reduce(self,
-                  state: Optional[Any] = None,
+                  state: Any = None,
                   step_outputs: Optional[runner.Output] = None) -> Any:
     """A function to perform per-step reduction on the evaluation outputs.
 

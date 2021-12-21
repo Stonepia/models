@@ -21,6 +21,8 @@ import time
 from absl import logging
 import tensorflow as tf
 
+import pandas as pd
+
 from tensorflow.python.eager import monitoring
 
 global_batch_size_gauge = monitoring.IntGauge(
@@ -68,6 +70,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
     self.steps_before_epoch = initial_step
     self.steps_in_epoch = 0
     self.start_time = None
+    self.eps = []
 
     global_batch_size_gauge.get_cell().set(batch_size)
 
@@ -113,7 +116,21 @@ class TimeHistory(tf.keras.callbacks.Callback):
     self.train_finish_time = time.time()
 
     if self.summary_writer:
+      print("summary_writer flushing")
       self.summary_writer.flush()
+
+    gpus = os.environ['XPU_GPU_NUM']
+    batch_size = self.batch_size
+    result_df = pd.DataFrame({'num_gpus' : [len(gpus)], 'bs' : [batch_size]})
+    for ind, eps in enumerate(self.eps):
+      result_df['{}'.format(ind*10)] = eps
+    result_df['gpu_detail'] = [gpus]
+
+    print('========================')
+    print(result_df)
+    result_df.to_csv('esp.csv', mode='a', header=False)
+    
+
 
   def on_epoch_begin(self, epoch, logs=None):
     self.epoch_start = time.time()
@@ -140,6 +157,7 @@ class TimeHistory(tf.keras.callbacks.Callback):
       elapsed_time = now - self.start_time
       steps_per_second = steps_since_last_log / elapsed_time
       examples_per_second = steps_per_second * self.batch_size
+      self.eps.append(examples_per_second)
 
       self.timestamp_log.append(BatchTimestamp(self.global_steps, now))
       logging.info(
