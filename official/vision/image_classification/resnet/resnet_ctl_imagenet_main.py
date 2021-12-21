@@ -176,7 +176,9 @@ def run(flags_obj):
         eval_steps=eval_steps,
         eval_interval=eval_interval)
   else:
+    tf.profiler.experimental.start(flags_obj.model_dir)
     resnet_controller.train(steps=per_epoch_steps * train_epochs)
+    tf.profiler.experimental.stop()
   time_callback.on_train_end()
 
   stats = build_stats(runnable, time_callback)

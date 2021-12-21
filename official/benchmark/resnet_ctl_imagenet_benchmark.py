@@ -581,7 +581,7 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
 
     FLAGS.num_gpus = 1
     FLAGS.distribution_strategy = 'off'
-    FLAGS.model_dir = self._get_model_dir('benchmark_gpu_remapper_no_dist_strat')
+    FLAGS.model_dir = self._get_model_dir('gpu_remapper_{}d_{}bs'.format(os.environ["XPU_GPU_NUM"], single_bs))
 
 
     FLAGS.batch_size = total_batch_size
@@ -602,7 +602,7 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
 
     FLAGS.num_gpus = ngpus
     FLAGS.distribution_strategy = 'Mirrored'
-    FLAGS.model_dir = self._get_model_dir('benchmark_{}_gpu'.format(ngpus))
+    FLAGS.model_dir = self._get_model_dir('mirrored_{}d_{}bs'.format(ngpus, single_bs))
     FLAGS.batch_size = single_bs * ngpus  # 4 GPUs
     self._run_and_report_benchmark()
   
@@ -615,7 +615,7 @@ class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
     def_flags = {}
     def_flags['skip_eval'] = True
     def_flags['use_synthetic_data'] = True
-    def_flags['train_steps'] = 110
+    def_flags['train_steps'] = 20
     def_flags['steps_per_loop'] = 10
     def_flags['log_steps'] = 10
 
