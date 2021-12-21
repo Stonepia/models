@@ -222,7 +222,7 @@ class Resnet50CtlBenchmarkBase(CtlBenchmark):
         warmup=1,
         start_time_sec=start_time_sec)
 
-  def benchmark_1_gpu_no_dist_strat(self):
+  def benchmark_1_gpu_no_dist_strat(self,bs):
     """Test Keras model with 1 GPU, no distribution strategy."""
     self._setup()
 
@@ -235,7 +235,7 @@ class Resnet50CtlBenchmarkBase(CtlBenchmark):
     FLAGS.enable_xla=False
     FLAGS.single_l2_loss_op=True
     FLAGS.data_format="channels_last"
-    FLAGS.batch_size = 64
+    FLAGS.batch_size = bs
     print("Model dir : ", FLAGS.model_dir)
     self._run_and_report_benchmark()
 
@@ -312,15 +312,16 @@ class Resnet50CtlBenchmarkBase(CtlBenchmark):
     FLAGS.single_l2_loss_op = True
     self._run_and_report_benchmark()
 
-  def benchmark_8_gpu(self):
+  def benchmark_4_gpu(self):
     """Test Keras model with 8 GPUs."""
     self._setup()
 
-    FLAGS.num_gpus = 8
+    FLAGS.num_gpus = 4
     FLAGS.distribution_strategy = 'mirrored'
     FLAGS.model_dir = self._get_model_dir('benchmark_8_gpu')
-    FLAGS.batch_size = 128 * 8  # 8 GPUs
+    FLAGS.batch_size = 32 * 4  # 8 GPUs
     self._run_and_report_benchmark()
+
 
   def benchmark_8_gpu_fp32_no_tf32(self):
     """Test Keras model with 8 GPUs.Runs in FP32 by disabling TF32 execution."""
@@ -512,7 +513,7 @@ class Resnet50CtlBenchmarkSynth(Resnet50CtlBenchmarkBase):
     def_flags = {}
     def_flags['skip_eval'] = True
     def_flags['use_synthetic_data'] = True
-    def_flags['train_steps'] = 20
+    def_flags['train_steps'] = 100
     def_flags['steps_per_loop'] = 10
     def_flags['log_steps'] = 10
 
@@ -547,7 +548,15 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
         flag_methods=flag_methods,
         default_flags=default_flags,
         **kwargs)
-
+  
+  def set_common_flags(self):
+    FLAGS.enable_tensorboard = False
+    FLAGS.use_tf_while_loop=False
+    FLAGS.use_tf_function=True
+    FLAGS.enable_xla=False
+    FLAGS.single_l2_loss_op=True
+    FLAGS.data_format="channels_last"
+  
   @benchmark_wrappers.enable_runtime_flags
   def _run_and_report_benchmark(self):
     start_time_sec = time.time()
@@ -568,24 +577,36 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
     """Test Keras model with 1 GPU, no distribution strategy."""
     self._setup()
 
+    self.set_common_flags()
+
     FLAGS.num_gpus = 1
     FLAGS.distribution_strategy = 'off'
     FLAGS.model_dir = self._get_model_dir('benchmark_gpu_remapper_no_dist_strat')
-    FLAGS.enable_tensorboard = False
-    FLAGS.use_tf_while_loop=False
-    FLAGS.use_tf_function=True
-    FLAGS.enable_xla=False
-    FLAGS.single_l2_loss_op=True
-    FLAGS.data_format="channels_last"
+
 
     FLAGS.batch_size = total_batch_size
 
     print("Model dir : ", FLAGS.model_dir)
     os.environ["XPU_GPU_BS"] = "{}".format(single_bs)
+    os.environ['CURRENT_X_STRATEGY']='GPURemapper'
 
 
     self._run_and_report_benchmark()
 
+  def benchmark_mirrored_strategy(self, single_bs, ngpus):
+    """Test Keras model with ngpus GPUs."""
+    self._setup()
+    os.environ['CURRENT_X_STRATEGY']='mirrored'
+
+    self.set_common_flags()
+
+    FLAGS.num_gpus = ngpus
+    FLAGS.distribution_strategy = 'Mirrored'
+    FLAGS.model_dir = self._get_model_dir('benchmark_{}_gpu'.format(ngpus))
+    FLAGS.batch_size = single_bs * ngpus  # 4 GPUs
+    self._run_and_report_benchmark()
+  
+  
 
 class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
   """Resnet50 Batch run synthetic benchmark tests."""
@@ -605,24 +626,37 @@ class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
 
 if __name__ == '__main__':
   test = Resnet50BatchCtlBenchmarkSynth(output_dir='./logs')
+  test2 = Resnet50CtlBenchmarkSynth()
   print("start bench marking ")
   ngpus = 4
 
-  single_bs = [8,16,32,48]
+  single_bs = [64]
   num_devices_range = np.arange(2,ngpus+1)
 
   print(num_devices_range)
 
 
+
+  print("=========GPU Remapper ==========")
   for num_devices in num_devices_range:
-    print(num_devices, ", ", type(num_devices))
+    os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
     for bs in single_bs:
       total_bs = int(bs * num_devices)
-      os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
-      print("=====================")
-      print("num_devices :  {} , total_bs : {}".format(num_devices, total_bs))
+      print("--------num_devices {} , single_bs {}-------".format(num_devices, bs))
 
       test.benchmark_gpu_remapper_no_dist_strat(total_bs, bs)
-
+  
+  print("=========MIRRORED STRATEGY ==========")
+  for num_devices in num_devices_range:
+    os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
+    for bs in single_bs:
+      print("--------num_devices {} , total_bs {}-------".format(num_devices, single_bs))
+      test.benchmark_mirrored_strategy(single_bs = bs, ngpus=int(num_devices))
+  # test.benchmark_4_gpu()
+  # test2.benchmark_4_gpu(bs)
+  # for bs in single_bs:
+  #   print("======batch size {}======".format(bs))
+  #   test2.benchmark_1_gpu_no_dist_strat(bs)
+      # test2.benchmark_mirrored_strategy(bs, num_devices)
   # test.benchmark_gpu_remapper_no_dist_strat(96,32, "0,1,2")
   # tf.test.main()

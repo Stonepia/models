@@ -121,10 +121,9 @@ class TimeHistory(tf.keras.callbacks.Callback):
 
     gpus = os.environ['XPU_GPU_NUM']
     batch_size = self.batch_size
-    result_df = pd.DataFrame({'num_gpus' : [len(gpus)], 'bs' : [batch_size]})
+    result_df = pd.DataFrame({'strategy': [os.environ['CURRENT_X_STRATEGY']], 'num_gpus' : [gpus], 'bs' : [batch_size]})
     for ind, eps in enumerate(self.eps):
       result_df['{}'.format(ind*10)] = eps
-    result_df['gpu_detail'] = [gpus]
 
     print('========================')
     print(result_df)
