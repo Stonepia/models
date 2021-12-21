@@ -605,6 +605,23 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
     FLAGS.model_dir = self._get_model_dir('mirrored_{}d_{}bs'.format(ngpus, single_bs))
     FLAGS.batch_size = single_bs * ngpus  # 4 GPUs
     self._run_and_report_benchmark()
+
+  def benchmark_single_device(self,bs):
+    """Test Keras model with 1 GPU, no distribution strategy."""
+    self._setup()
+    os.environ['CURRENT_X_STRATEGY']='SingleDev'
+    FLAGS.num_gpus = 1
+    FLAGS.distribution_strategy = 'off'
+    FLAGS.model_dir = self._get_model_dir('single_no_dist_strat_bs{}'.format(bs))
+    FLAGS.enable_tensorboard = False
+    FLAGS.use_tf_while_loop=False
+    FLAGS.use_tf_function=True
+    FLAGS.enable_xla=False
+    FLAGS.single_l2_loss_op=True
+    FLAGS.data_format="channels_last"
+    FLAGS.batch_size = bs
+    print("Model dir : ", FLAGS.model_dir)
+    self._run_and_report_benchmark()
   
   
 
@@ -634,7 +651,10 @@ if __name__ == '__main__':
   num_devices_range = np.arange(2,ngpus+1)
 
   print(num_devices_range)
-
+  print("=======Single Device===========")
+  os.environ["XPU_GPU_NUM"] = "{}".format(1)
+  for bs in single_bs:
+    test.benchmark_single_device(bs)
 
 
   print("=========GPU Remapper ==========")
