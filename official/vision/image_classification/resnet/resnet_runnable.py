@@ -107,7 +107,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         datasets_num_private_threads=self.flags_obj
         .datasets_num_private_threads,
         dtype=self.dtype,
-        drop_remainder=True)
+        drop_remainder=False)
     orbit.StandardTrainer.__init__(
         self,
         train_dataset,
