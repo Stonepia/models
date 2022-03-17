@@ -155,12 +155,11 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
     if self._train_iter is None:
       self._train_iter = tf.nest.map_structure(iter, self.train_dataset)
 
-    xpu_remapper_enabled = (os.environ['CURRENT_X_STRATEGY']=='GPURemapper')
     with options({
         'disable_model_pruning': True,
         'constant_folding': False,
         'dependency_optimization': False,
-        'xpu_remapper': xpu_remapper_enabled,
+        'xpu_remapper': True,
         'layout_optimizer': False
     }):
       self._train_loop_fn(self._train_iter, num_steps)
