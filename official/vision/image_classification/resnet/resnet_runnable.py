@@ -55,7 +55,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
           num_channels=imagenet_preprocessing.NUM_CHANNELS,
           num_classes=imagenet_preprocessing.NUM_CLASSES,
           dtype=self.dtype,
-          drop_remainder=False)
+          drop_remainder=True)
     else:
       self.input_fn = imagenet_preprocessing.input_fn
 
@@ -107,7 +107,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         datasets_num_private_threads=self.flags_obj
         .datasets_num_private_threads,
         dtype=self.dtype,
-        drop_remainder=False)
+        drop_remainder=True)
     orbit.StandardTrainer.__init__(
         self,
         train_dataset,
@@ -142,16 +142,21 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
     """See base class."""
 
     def step_fn(inputs):
-      """Function to run on the device."""
+      """Function to run on the device for one step."""
       images, labels = inputs
+
       with tf.GradientTape() as tape:
         logits = self.model(images, training=True)
-
+        # tf.print("logits is : ", logits)
         prediction_loss = tf.keras.losses.sparse_categorical_crossentropy(
             labels, logits)
+        # tf.print("prediction loss", prediction_loss)
         loss = tf.reduce_sum(prediction_loss) * (1.0 /
                                                  self.flags_obj.batch_size)
+
+        # tf.print("loss is :" , loss)
         num_replicas = self.strategy.num_replicas_in_sync
+        # TODO : Set this bigger so that we could identify the problem
         l2_weight_decay = 1e-4
         if self.flags_obj.single_l2_loss_op:
           l2_loss = l2_weight_decay * 2 * tf.add_n([
@@ -160,17 +165,26 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
               if 'bn' not in v.name
           ])
 
-          loss += (l2_loss / num_replicas)
+          # tf.print("l2 loss is ", l2_loss)
+          loss += l2_loss / 4
+          # Original one. This divide num_replicas will get different result
+          # loss += (l2_loss / num_replicas)
         else:
           loss += (tf.reduce_sum(self.model.losses) / num_replicas)
+        # tf.print("final loss is : ", loss)
 
       grad_utils.minimize_using_explicit_allreduce(
           tape, self.optimizer, loss, self.model.trainable_variables)
       self.train_loss.update_state(loss)
       self.train_accuracy.update_state(labels, logits)
+      return loss
+
+    
     if self.flags_obj.enable_xla:
       step_fn = tf.function(step_fn, jit_compile=True)
+
     self.strategy.run(step_fn, args=(next(iterator),))
+
 
   def train_loop_end(self):
     """See base class."""
@@ -178,6 +192,7 @@ class ResnetRunnable(orbit.StandardTrainer, orbit.StandardEvaluator):
         'train_loss': self.train_loss.result(),
         'train_accuracy': self.train_accuracy.result(),
     }
+    # print("final train loss is ", self.train_loss.result())
     # print("===========here here==================")
 
     self.time_callback.on_batch_end(self.epoch_helper.batch_index - 1)

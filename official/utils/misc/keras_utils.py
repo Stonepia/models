@@ -119,16 +119,16 @@ class TimeHistory(tf.keras.callbacks.Callback):
       print("summary_writer flushing")
       self.summary_writer.flush()
 
-    gpus = os.environ['XPU_GPU_NUM']
-    batch_size = self.batch_size
-    result_df = pd.DataFrame({'num_gpus' : [len(gpus)], 'bs' : [batch_size]})
-    for ind, eps in enumerate(self.eps):
-      result_df['{}'.format(ind*10)] = eps
-    result_df['gpu_detail'] = [gpus]
+    # gpus = os.environ['XPU_GPU_NUM']
+    # batch_size = self.batch_size
+    # result_df = pd.DataFrame({'strategy': [os.environ['CURRENT_X_STRATEGY']],'model' : [os.environ['RUNNING_MODEL']], 'num_gpus' : [gpus], 'bs' : [batch_size]})
+    # # result_df = pd.DataFrame({'bs' : [batch_size], 'model' : [os.environ['RUNNING_MODEL']]})
+    # for ind, eps in enumerate(self.eps):
+    #   result_df['{}'.format(ind*10)] = eps
 
-    print('========================')
-    print(result_df)
-    result_df.to_csv('esp.csv', mode='a', header=False)
+    # print('========================')
+    # print(result_df)
+    # result_df.to_csv('esp_single.csv', mode='a', header=False)
     
 
 

@@ -29,7 +29,10 @@ from official.vision.image_classification.resnet import resnet_ctl_imagenet_main
 from official.benchmark.perfzero_benchmark import PerfZeroBenchmark
 from official.benchmark import benchmark_wrappers
 from official.utils.flags import core as flags_core
-
+import pandas as pd
+from official.core import train_utils
+from official.vision.image_classification.resnet import imagenet_preprocessing
+from official.vision.image_classification.resnet import resnet_model
 
 MIN_TOP_1_ACCURACY = 0.76
 MAX_TOP_1_ACCURACY = 0.77
@@ -570,18 +573,14 @@ class Resnet50BatchCtlBenchmarkBase(CtlBenchmark):
 
     FLAGS.num_gpus = 1
     FLAGS.distribution_strategy = 'off'
-    FLAGS.model_dir = self._get_model_dir('benchmark_gpu_remapper_no_dist_strat')
-    FLAGS.enable_tensorboard = False
-    FLAGS.use_tf_while_loop=False
-    FLAGS.use_tf_function=True
-    FLAGS.enable_xla=False
-    FLAGS.single_l2_loss_op=True
-    FLAGS.data_format="channels_last"
+    FLAGS.model_dir = self._get_model_dir('gpu_remapper_{}d_{}bs'.format(os.environ["XPU_GPU_NUM"], total_batch_size))
+
 
     FLAGS.batch_size = total_batch_size
 
     print("Model dir : ", FLAGS.model_dir)
-    os.environ["XPU_GPU_BS"] = "{}".format(single_bs)
+    os.environ["XPU_GPU_BS"] = "{}".format(total_batch_size)
+    os.environ['CURRENT_X_STRATEGY']='GPURemapper'
 
 
     self._run_and_report_benchmark()
@@ -594,7 +593,7 @@ class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
     def_flags = {}
     def_flags['skip_eval'] = True
     def_flags['use_synthetic_data'] = True
-    def_flags['train_steps'] = 110
+    def_flags['train_steps'] = 50
     def_flags['steps_per_loop'] = 10
     def_flags['log_steps'] = 10
 
@@ -603,26 +602,69 @@ class Resnet50BatchCtlBenchmarkSynth(Resnet50BatchCtlBenchmarkBase):
         output_dir=output_dir, default_flags=def_flags, **kwargs)
 
 
+def count_flops_and_activations(batch_size):
+  print("handling bs : ", bs)
+  model = resnet_model.resnet50(
+      batch_size=bs,
+      num_classes=imagenet_preprocessing.NUM_CLASSES,
+      use_l2_regularizer=False)
+  # ac_count = base_ac_count * batch_size / 10.**9 / 2
+  flops = train_utils.try_count_flops(model) / 10.**9 / 2
+
+  result_df = pd.DataFrame({'model': 50, 'bs' : [batch_size],'flops' : flops})
+  result_df.to_csv('flops_and_ac_count.csv', mode='a', header=False)
+  print(result_df)
+
+
 if __name__ == '__main__':
   test = Resnet50BatchCtlBenchmarkSynth(output_dir='./logs')
   print("start bench marking ")
   ngpus = 4
 
-  single_bs = [8,16,32,48]
-  num_devices_range = np.arange(2,ngpus+1)
+  single_bs = [16,32,64]
+  num_devices_range = [2]
 
-  print(num_devices_range)
+  os.environ["RUNNING_MODEL"]="50"
+  os.environ["HS_ROUND_TRIP"]="false"
+  os.environ["XPU_ROUND_TRIP"]="false"
+  # print(num_devices_range)
+  print("=======Single Device===========")
+  os.environ["XPU_GPU_NUM"] = "{}".format(1)
+  # for bs in single_bs:
+    # count_flops_and_activations(bs)
+  # # for i in range (10):
+  # # print("========{} th test=====".format(i))
+  for bs in single_bs:
+    test.benchmark_single_device(bs)
+    os.environ['RUN_NUM']="{}".format(1)
+  gpu_bs = [64,48,32,32]
+  os.environ["XPU_GPU_BS_0"]="{}".format(gpu_bs[0])
+  os.environ["XPU_GPU_BS_1"]="{}".format(gpu_bs[1])
+  os.environ["XPU_GPU_BS_2"]="{}".format(gpu_bs[2])
+  os.environ["XPU_GPU_BS_3"]="{}".format(gpu_bs[3])
 
+  # print("=========GPU Remapper ==========")
+  # for num_devices in num_devices_range:
+  #   os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
+  #   # for bs in single_bs:
+  #   #   total_bs = int(bs * num_devices)
+  #   #   total_bs = 
+  #   total_bs = sum(gpu_bs[:num_devices])
+  #   print("--------num_devices {} , total {}-------".format(num_devices, total_bs))
 
-  for num_devices in num_devices_range:
-    print(num_devices, ", ", type(num_devices))
-    for bs in single_bs:
-      total_bs = int(bs * num_devices)
-      os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
-      print("=====================")
-      print("num_devices :  {} , total_bs : {}".format(num_devices, total_bs))
-
-      test.benchmark_gpu_remapper_no_dist_strat(total_bs, bs)
-
+  #   test.benchmark_gpu_remapper_no_dist_strat(total_bs, 0)
+  
+  # print("=========MIRRORED STRATEGY ==========")
+  # for num_devices in num_devices_range:
+  #   os.environ["XPU_GPU_NUM"] = "{}".format(num_devices)
+  #   for bs in single_bs:
+  #     print("--------num_devices {} , total_bs {}-------".format(num_devices, bs))
+  #     test.benchmark_mirrored_strategy(single_bs = bs, ngpus=int(num_devices))
+  # # test.benchmark_4_gpu()
+  # test2.benchmark_4_gpu(bs)
+  # for bs in single_bs:
+  #   print("======batch size {}======".format(bs))
+  #   test2.benchmark_1_gpu_no_dist_strat(bs)
+      # test2.benchmark_mirrored_strategy(bs, num_devices)
   # test.benchmark_gpu_remapper_no_dist_strat(96,32, "0,1,2")
   # tf.test.main()

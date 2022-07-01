@@ -136,6 +136,7 @@ def minimize_using_explicit_allreduce(tape,
   else:
     # TPU or FP32 GPU code path
     grads = tape.gradient(loss, trainable_variables)
+    # tf.print("grads is, ", grads[3])
     grads_and_vars = zip(grads, trainable_variables)
     if pre_allreduce_callbacks:
       grads_and_vars = _run_callbacks(pre_allreduce_callbacks, grads_and_vars)

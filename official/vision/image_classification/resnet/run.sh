@@ -4,13 +4,14 @@
 
 
 
-# rm -rf ResNetGraph
+rm -rf ResNetGraph
 
-# TF_DUMP_GRAPH_PREFIX="ResNetGraph" \
 # TF_CPP_VMODULE="xpu_remapper" \
-# TF_CPP_MAX_VLOG_LEVEL=4 \
-XPU_GPU_BS=32 \
-CUDA_VISIBLE_DEVICES=0,1 \
+# TF_DUMP_GRAPH_PREFIX="HSResNetGraph" \
+TF_CPP_MAX_VLOG_LEVEL=1 \
+XPU_GPU_BS=64 \
+XPU_ROUND_TRIP=true \
+CUDA_VISIBLE_DEVICES=0 \
 PYTHONPATH=$PYTHONPATH:$PWD:/home/tongsu/models \
 python resnet_ctl_imagenet_main.py \
 --num_gpus=1 \

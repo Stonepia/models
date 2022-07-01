@@ -16,6 +16,7 @@
 
 import math
 import os
+import re
 
 # Import libraries
 from absl import app
@@ -171,14 +172,19 @@ def run(flags_obj):
 
   time_callback.on_train_begin()
   if not flags_obj.skip_eval:
+    print("==========not skip eval, train_steps {},eval steps {} , eval_interval{}".format(per_epoch_steps*train_epochs, 
+    eval_steps, eval_interval))
     resnet_controller.train_and_evaluate(
         train_steps=per_epoch_steps * train_epochs,
         eval_steps=eval_steps,
         eval_interval=eval_interval)
   else:
-    tf.profiler.experimental.start(flags_obj.model_dir)
+    print("==========Direct train")
+    # options = tf.profiler.experimental.ProfilerOptions(
+    #   host_tracer_level=3, python_tracer_level=0, device_tracer_level=1, delay_ms=0)
+    # tf.profiler.experimental.start(flags_obj.model_dir, options=options)
     resnet_controller.train(steps=per_epoch_steps * train_epochs)
-    tf.profiler.experimental.stop()
+    # tf.profiler.experimental.stop()
   time_callback.on_train_end()
 
   stats = build_stats(runnable, time_callback)
@@ -193,5 +199,17 @@ def main(_):
 
 if __name__ == '__main__':
   logging.set_verbosity(logging.INFO)
+  os.environ["XPU_GPU_NUM"] = "{}".format(1)
+  os.environ['CURRENT_X_STRATEGY']='SingleDev'
+  os.environ["HS_ROUND_TRIP"]="true"
+  os.environ["XPU_ROUND_TRIP"]="false"
+
+  tf.random.set_seed(42)
+  gpu_bs = [64,48,32,32]
+  os.environ["XPU_GPU_BS_0"]="{}".format(gpu_bs[0])
+  os.environ["XPU_GPU_BS_1"]="{}".format(gpu_bs[1])
+  os.environ["XPU_GPU_BS_2"]="{}".format(gpu_bs[2])
+  os.environ["XPU_GPU_BS_3"]="{}".format(gpu_bs[3])  
+  os.environ["XPU_GPU_BS"] = "{}".format(64)
   common.define_keras_flags()
   app.run(main)

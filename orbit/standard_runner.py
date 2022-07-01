@@ -40,6 +40,8 @@ from typing import Any, Optional
 
 import dataclasses
 
+from tensorflow.python.framework import type_spec
+
 from orbit import runner
 from orbit.utils import loop_fns
 
@@ -155,12 +157,15 @@ class StandardTrainer(runner.AbstractTrainer, metaclass=abc.ABCMeta):
     if self._train_iter is None:
       self._train_iter = tf.nest.map_structure(iter, self.train_dataset)
 
+    # xpu_remapper_enabled = (os.environ['CURRENT_X_STRATEGY']=='GPURemapper')
+    xpu_remapper_enabled = False
+    print("xpu_remapper_enabled? ", xpu_remapper_enabled)
     with options({
-        'disable_model_pruning': True,
-        'constant_folding': False,
-        'dependency_optimization': False,
-        'xpu_remapper': True,
-        'layout_optimizer': False
+        # 'disable_model_pruning': True,
+        # 'constant_folding': False,
+        # 'dependency_optimization': False,
+        'xpu_remapper': xpu_remapper_enabled ,
+        # 'layout_optimizer': False
     }):
       self._train_loop_fn(self._train_iter, num_steps)
     return self.train_loop_end()
